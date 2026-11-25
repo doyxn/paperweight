@@ -168,6 +168,9 @@ def _display_math(tex: str) -> list[tuple[int, str]]:
     return found
 
 
+FRONT_MATTER = "Front matter"
+
+
 class _SectionIndex:
     def __init__(self, sections: list[tuple[int, str]]):
         self._positions = [p for p, _ in sections]
@@ -186,6 +189,9 @@ def _sections(body: str) -> tuple[list[Section], list[tuple[int, str]]]:
             (match.start(), after, " ".join(title.split()), SECTION_LEVELS[match.group(1)])
         )
     sections: list[Section] = []
+    lead = body[: heads[0][0] if heads else len(body)].strip()
+    if lead:
+        sections.append(Section(title=FRONT_MATTER, level=1, text=lead))
     for i, (_, after, title, level) in enumerate(heads):
         stop = heads[i + 1][0] if i + 1 < len(heads) else len(body)
         sections.append(Section(title=title, level=level, text=body[after:stop].strip()))

@@ -12,7 +12,7 @@ def test_parse_sample_document(sample_tex, fixture_dir):
 
     assert paper.metadata.title == "Fast Exponential Smoothing \\\\ for Streams"
     assert paper.metadata.abstract == "We present an online smoother with $O(1)$ updates."
-    assert [s.title for s in paper.sections] == ["Method", "Experiments", "Setup"]
+    assert [s.title for s in paper.sections] == ["Front matter", "Method", "Experiments", "Setup"]
 
     labelled = [e for e in paper.equations if e.label == "eq:update"]
     assert len(labelled) == 1
@@ -87,3 +87,13 @@ def test_find_environments_counts(bodies):
     tex = "".join(f"\\begin{{equation}}{b}\\end{{equation}}" for b in bodies)
     envs = find_environments(tex, ("equation",))
     assert [e.body for e in envs] == bodies
+
+
+def test_prose_before_first_heading_is_kept():
+    tex = "\\begin{document}Assume $x>0$ throughout.\\section{Method}Body.\\end{document}"
+    paper = parse_latex(tex)
+    assert paper.sections[0].title == "Front matter"
+    assert "Assume" in paper.sections[0].text
+    assert parse_latex("\\begin{document}Only prose.\\end{document}").sections[0].text == (
+        "Only prose."
+    )

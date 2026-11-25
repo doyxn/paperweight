@@ -123,9 +123,16 @@ def unpack_source(data: bytes) -> tuple[str, dict[str, str] | bytes]:
     raise IngestError("unrecognised arXiv source format")
 
 
+_TEX_COMMAND = re.compile(r"\\[A-Za-z@]+\*?(?:\[[^\]]*\])?(?:\{[^{}]*\})*")
+MIN_PROSE_WORDS = 20
+
+
 def is_empty(paper: Paper) -> bool:
     """True when the LaTeX source holds no content, e.g. it only wraps a PDF via \\includepdf."""
-    return not (paper.sections or paper.equations or paper.algorithms)
+    if paper.equations or paper.algorithms:
+        return False
+    prose = _TEX_COMMAND.sub(" ", " ".join(s.text for s in paper.sections))
+    return len(re.findall(r"[A-Za-z]{2,}", prose)) < MIN_PROSE_WORDS
 
 
 def parse_latex_files(files: dict[str, str], metadata: PaperMetadata | None = None) -> Paper:
