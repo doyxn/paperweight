@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import json
-import os
 
 import pytest
 
@@ -214,13 +213,24 @@ def test_resume_rejects_stale_spec(tmp_path, fixture_dir, spec_json, fake_llm_fa
         llm=fake_llm_factory([json.dumps(spec_json)]),
         log=lambda _: None,
     ).run()
-    spec_mtime = (tmp_path / "spec.json").stat().st_mtime
-    os.utime(tmp_path / "paper.json", (spec_mtime + 10, spec_mtime + 10))
-    with pytest.raises(PipelineError, match="newer than spec.json"):
+    Pipeline(
+        Settings(), _options(tmp_path, fixture_dir, until_stage="parse"), log=lambda _: None
+    ).run()
+
+    def resume():
+        devin = FakeDevin([{"structured_output": {"pr_url": "p", "branch": "b"}}] * 2)
         Pipeline(
             SETTINGS,
             PipelineOptions(source=None, out_dir=tmp_path, repo="me/out", from_stage="implement"),
-            devin=FakeDevin([]),
+            devin=devin,
             github=FakeGitHub(),
             log=lambda _: None,
         ).run()
+
+    resume()
+
+    paper = json.loads((tmp_path / "paper.json").read_text())
+    paper["metadata"]["title"] = "A different paper"
+    (tmp_path / "paper.json").write_text(json.dumps(paper))
+    with pytest.raises(PipelineError, match="different paper.json"):
+        resume()

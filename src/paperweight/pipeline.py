@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import hashlib
 import json
 from collections.abc import Callable
 from dataclasses import dataclass, field
@@ -20,6 +21,7 @@ STAGES = ("parse", "spec", "implement", "test")
 SPEC_DIR = "docs/paperweight"
 IMPLEMENT_BRANCH = "paperweight/implementation"
 TEST_BRANCH = "paperweight/verification"
+SPEC_SOURCE = "spec.paper.sha256"
 
 IMPLEMENT_OUTPUT_SCHEMA: dict[str, Any] = {
     "type": "object",
@@ -45,6 +47,10 @@ TEST_OUTPUT_SCHEMA: dict[str, Any] = {
         "benchmarks": {"type": "array", "items": {"type": "string"}},
     },
 }
+
+
+def _paper_digest(paper: Paper) -> str:
+    return hashlib.sha256(paper.model_dump_json().encode()).hexdigest()
 
 
 class PipelineError(RuntimeError):
@@ -252,6 +258,7 @@ class Pipeline:
             self.log("[2/4] formal specification")
             result.spec = generate_spec(result.paper, self.llm)
             self._write("spec.json", result.spec.model_dump_json(indent=2))
+            self._write(SPEC_SOURCE, _paper_digest(result.paper))
             self._write("SPEC.md", render_spec_markdown(result.spec, result.paper))
             s = result.spec
             self.log(
@@ -260,9 +267,11 @@ class Pipeline:
             )
         elif any(st in stages for st in ("implement", "test")):
             result.spec = self._read_model("spec.json", Spec)
-            if (self.out / "paper.json").stat().st_mtime > (self.out / "spec.json").stat().st_mtime:
+            source = self.out / SPEC_SOURCE
+            if source.exists() and source.read_text().strip() != _paper_digest(result.paper):
                 raise PipelineError(
-                    "paper.json is newer than spec.json; rerun with --from spec to regenerate it"
+                    "spec.json was generated from a different paper.json; "
+                    "rerun with --from spec to regenerate it"
                 )
 
         if opts.dry_run:
