@@ -13,6 +13,7 @@ from paperweight.ingest import (
     IngestError,
     load_paper,
     parse_arxiv_id,
+    parse_latex_files,
     unpack_source,
 )
 from paperweight.models import Paper
@@ -119,3 +120,53 @@ def test_pdf_wrapper_source_falls_back_to_pdf(monkeypatch):
     paper = load_paper("1412.6980")
     assert pdf.called and seen["data"] == b"%PDF-1.5"
     assert paper.source_format == "pdf"
+
+
+def test_local_tex_file_resolves_sibling_includes(fixture_dir):
+    paper = load_paper(str(fixture_dir / "sample.tex"))
+    assert len(paper.algorithms) == 1
+
+
+def test_nested_main_resolves_includes_relative_to_it(sample_tex, fixture_dir):
+    algo = (fixture_dir / "sections/algo.tex").read_text()
+    kind, files = unpack_source(
+        _tarball({"paper/main.tex": sample_tex, "paper/sections/algo.tex": algo})
+    )
+    assert len(parse_latex_files(files).algorithms) == 1
+
+
+def test_local_directory_skips_symlinks_outside(tmp_path, sample_tex):
+    secret = tmp_path / "secret.tex"
+    secret.write_text("TOPSECRET")
+    src = tmp_path / "src"
+    src.mkdir()
+    (src / "main.tex").write_text(
+        sample_tex.replace("\\end{document}", "\\input{leak}\\end{document}")
+    )
+    (src / "leak.tex").symlink_to(secret)
+    paper = load_paper(str(src))
+    assert "TOPSECRET" not in paper.model_dump_json()
+
+
+def test_unpack_source_size_limit(monkeypatch, sample_tex):
+    monkeypatch.setattr("paperweight.ingest.MAX_SOURCE_BYTES", 100)
+    with pytest.raises(IngestError, match="size limit"):
+        unpack_source(gzip.compress(b"\\documentclass{article}" + b" " * 1000))
+    with pytest.raises(IngestError, match="size limit"):
+        unpack_source(_tarball({"main.tex": sample_tex}))
+
+
+@respx.mock
+def test_archive_without_main_falls_back_to_pdf(monkeypatch):
+    respx.get(ARXIV_API).mock(return_value=httpx.Response(200, text=ATOM_FEED))
+    respx.get("https://arxiv.org/e-print/1412.6980").mock(
+        return_value=httpx.Response(200, content=_tarball({"macros.tex": "\\newcommand{\\x}{y}"}))
+    )
+    respx.get("https://arxiv.org/pdf/1412.6980").mock(
+        return_value=httpx.Response(200, content=b"%PDF-1.5")
+    )
+    monkeypatch.setattr(
+        "paperweight.ingest.parse_pdf",
+        lambda data, metadata=None: Paper(metadata=metadata, source_format="pdf"),
+    )
+    assert load_paper("1412.6980").source_format == "pdf"

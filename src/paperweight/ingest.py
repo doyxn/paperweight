@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import gzip
 import io
+import posixpath
 import re
 import tarfile
 import xml.etree.ElementTree as ET
@@ -21,6 +22,7 @@ ARXIV_PDF = "https://arxiv.org/pdf/{id}"
 USER_AGENT = "paperweight/0.1 (+https://github.com/doyxn/paperweight)"
 ATOM = "{http://www.w3.org/2005/Atom}"
 TEXT_SUFFIXES = (".tex", ".sty", ".cls", ".bbl", ".bib")
+MAX_SOURCE_BYTES = 200 * 1024 * 1024
 
 _NEW_ID = r"\d{4}\.\d{4,5}(?:v\d+)?"
 _OLD_ID = r"[a-z\-]+(?:\.[A-Z]{2})?/\d{7}(?:v\d+)?"
@@ -89,9 +91,13 @@ def unpack_source(data: bytes) -> tuple[str, dict[str, str] | bytes]:
     try:
         with tarfile.open(fileobj=io.BytesIO(data), mode="r:*") as tar:
             files: dict[str, str] = {}
-            for member in tar.getmembers():
+            total = 0
+            for member in tar:
                 if not member.isfile() or not member.name.endswith(TEXT_SUFFIXES):
                     continue
+                total += member.size
+                if total > MAX_SOURCE_BYTES:
+                    raise IngestError("source archive exceeds the size limit")
                 handle = tar.extractfile(member)
                 if handle is not None:
                     name = member.name[2:] if member.name.startswith("./") else member.name
@@ -102,7 +108,13 @@ def unpack_source(data: bytes) -> tuple[str, dict[str, str] | bytes]:
         pass
     raw = data
     if data[:2] == b"\x1f\x8b":
-        raw = gzip.decompress(data)
+        try:
+            with gzip.GzipFile(fileobj=io.BytesIO(data)) as handle:
+                raw = handle.read(MAX_SOURCE_BYTES + 1)
+        except (OSError, EOFError) as exc:
+            raise IngestError(f"corrupt gzip source: {exc}") from exc
+        if len(raw) > MAX_SOURCE_BYTES:
+            raise IngestError("source archive exceeds the size limit")
         if raw[:4] == b"%PDF":
             return "pdf", raw
     text = _decode(raw)
@@ -120,7 +132,9 @@ def parse_latex_files(files: dict[str, str], metadata: PaperMetadata | None = No
     main = find_main_file(files)
     if main is None:
         raise IngestError("no LaTeX file with \\documentclass found in source")
-    return parse_latex(files[main], metadata=metadata, files=files)
+    return parse_latex(
+        files[main], metadata=metadata, files=files, base_dir=posixpath.dirname(main)
+    )
 
 
 _ALGO_HEAD = re.compile(r"^\s*Algorithm\s+\d+[:.]?.*$", re.MULTILINE)
@@ -173,8 +187,11 @@ def load_paper(source: str, client: httpx.Client | None = None) -> Paper:
                 kind, payload = "missing", b""
             if kind == "latex":
                 assert isinstance(payload, dict)
-                paper = parse_latex_files(payload, metadata)
-                if not is_empty(paper):
+                try:
+                    paper = parse_latex_files(payload, metadata)
+                except IngestError:
+                    paper = None
+                if paper is not None and not is_empty(paper):
                     return paper
             if kind == "pdf":
                 assert isinstance(payload, bytes)
@@ -187,19 +204,27 @@ def load_paper(source: str, client: httpx.Client | None = None) -> Paper:
             client.close()
 
 
+def _read_tree(root: Path) -> dict[str, str]:
+    """Text sources under ``root``; symlinks are skipped so nothing outside it is read."""
+    root = root.resolve()
+    files: dict[str, str] = {}
+    for p in root.rglob("*"):
+        if p.is_symlink() or not p.is_file() or p.suffix not in TEXT_SUFFIXES:
+            continue
+        if not p.resolve().is_relative_to(root):
+            continue
+        files[p.relative_to(root).as_posix()] = _decode(p.read_bytes())
+    return files
+
+
 def _load_local(path: Path) -> Paper:
     if path.is_dir():
-        files = {
-            str(p.relative_to(path)): _decode(p.read_bytes())
-            for p in path.rglob("*")
-            if p.is_file() and p.suffix in TEXT_SUFFIXES
-        }
-        return parse_latex_files(files)
+        return parse_latex_files(_read_tree(path))
     data = path.read_bytes()
     if path.suffix.lower() == ".pdf" or data[:4] == b"%PDF":
         return parse_pdf(data)
     if path.suffix == ".tex":
-        return parse_latex(_decode(data))
+        return parse_latex(_decode(data), files=_read_tree(path.parent))
     kind, payload = unpack_source(data)
     if kind == "pdf":
         assert isinstance(payload, bytes)

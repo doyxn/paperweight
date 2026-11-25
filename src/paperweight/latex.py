@@ -193,12 +193,18 @@ def _sections(body: str) -> tuple[list[Section], list[tuple[int, str]]]:
 
 
 def parse_latex(
-    tex: str, metadata: PaperMetadata | None = None, files: Mapping[str, str] | None = None
+    tex: str,
+    metadata: PaperMetadata | None = None,
+    files: Mapping[str, str] | None = None,
+    base_dir: str = "",
 ) -> Paper:
-    """Parse a LaTeX document (optionally with sibling files for ``\\input``) into a Paper."""
+    """Parse a LaTeX document (optionally with sibling files for ``\\input``) into a Paper.
+
+    ``base_dir`` is the main file's directory within ``files``; includes resolve against it.
+    """
     tex = strip_comments(tex)
     if files:
-        tex = resolve_inputs(tex, files)
+        tex = resolve_inputs(tex, files, base_dir)
 
     metadata = metadata.model_copy() if metadata else PaperMetadata()
     if not metadata.title:
