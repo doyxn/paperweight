@@ -260,6 +260,10 @@ class Pipeline:
             )
         elif any(st in stages for st in ("implement", "test")):
             result.spec = self._read_model("spec.json", Spec)
+            if (self.out / "paper.json").stat().st_mtime > (self.out / "spec.json").stat().st_mtime:
+                raise PipelineError(
+                    "paper.json is newer than spec.json; rerun with --from spec to regenerate it"
+                )
 
         if opts.dry_run:
             if result.spec and any(st in stages for st in ("implement", "test")):
@@ -280,13 +284,28 @@ class Pipeline:
 
         assert result.spec is not None
         if "implement" in stages:
-            result.sessions.append(self._implement(result.paper, result.spec))
+            self._record(result, self._implement(result.paper, result.spec))
         if "test" in stages:
-            base = self._implementation_branch(result)
-            result.sessions.append(self._verify(result.paper, result.spec, base))
+            if "implement" in stages and not opts.wait:
+                self.log(
+                    "[4/4] skipped: --no-wait leaves no implementation branch to test yet; "
+                    "rerun with --from test once the implementation PR is open"
+                )
+            else:
+                base = self._implementation_branch(result)
+                self._record(result, self._verify(result.paper, result.spec, base))
 
         self._write_report(result)
         return result
+
+    def _record(self, result: PipelineResult, session: SessionResult) -> None:
+        result.sessions.append(session)
+        if self.options.wait and not session.pr_urls:
+            self._write_report(result)
+            raise PipelineError(
+                f"{session.stage} session {session.session_url} finished without a PR "
+                f"(status {session.status}/{session.status_detail})"
+            )
 
     def _seed_repo(self, paper: Paper, spec: Spec) -> str:
         assert self.options.repo
@@ -362,11 +381,6 @@ class Pipeline:
     def _implementation_branch(self, result: PipelineResult) -> str:
         for session in result.sessions:
             if session.stage == "implement":
-                if self.options.wait and not session.pr_urls:
-                    raise PipelineError(
-                        f"implementation session {session.session_url} finished without a PR "
-                        f"(status {session.status}/{session.status_detail}); not starting tests"
-                    )
                 return session.branch or IMPLEMENT_BRANCH
         path = self.out / "implement_session.json"
         if path.exists():

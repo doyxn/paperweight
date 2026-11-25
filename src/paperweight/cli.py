@@ -64,7 +64,7 @@ def compile(
         False, "--dry-run", help="Stop before calling Devin/GitHub; write prompts instead."
     ),
     no_wait: bool = typer.Option(
-        False, "--no-wait", help="Start Devin sessions without waiting for them to finish."
+        False, "--no-wait", help="Do not wait for Devin; run tests later with --from test."
     ),
     poll_interval: float = typer.Option(30.0, help="Seconds between Devin status polls."),
     session_timeout: float = typer.Option(4 * 3600, help="Max seconds to wait per session."),

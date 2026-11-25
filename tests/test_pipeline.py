@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import os
 
 import pytest
 
@@ -175,3 +176,51 @@ def test_parse_only_needs_no_credentials(tmp_path, fixture_dir):
     ).run()
     assert result.paper is not None and result.spec is None
     assert (tmp_path / "paper.json").exists() and (tmp_path / "report.md").exists()
+
+
+def test_verification_without_pr_fails(tmp_path, fixture_dir, spec_json, fake_llm_factory):
+    devin = FakeDevin([{"structured_output": {"pr_url": "p", "branch": "b"}}, {}])
+    pipeline = Pipeline(
+        SETTINGS,
+        _options(tmp_path, fixture_dir, repo="me/out"),
+        llm=fake_llm_factory([json.dumps(spec_json)]),
+        devin=devin,
+        github=FakeGitHub(),
+        log=lambda _: None,
+    )
+    with pytest.raises(PipelineError, match="test session .* without a PR"):
+        pipeline.run()
+    assert "test:" in (tmp_path / "report.md").read_text()
+
+
+def test_no_wait_does_not_start_verification(tmp_path, fixture_dir, spec_json, fake_llm_factory):
+    devin = FakeDevin([{}])
+    result = Pipeline(
+        SETTINGS,
+        _options(tmp_path, fixture_dir, repo="me/out", wait=False),
+        llm=fake_llm_factory([json.dumps(spec_json)]),
+        devin=devin,
+        github=FakeGitHub(),
+        log=lambda _: None,
+    ).run()
+    assert len(devin.prompts) == 1
+    assert [s.stage for s in result.sessions] == ["implement"]
+
+
+def test_resume_rejects_stale_spec(tmp_path, fixture_dir, spec_json, fake_llm_factory):
+    Pipeline(
+        Settings(),
+        _options(tmp_path, fixture_dir, until_stage="spec"),
+        llm=fake_llm_factory([json.dumps(spec_json)]),
+        log=lambda _: None,
+    ).run()
+    spec_mtime = (tmp_path / "spec.json").stat().st_mtime
+    os.utime(tmp_path / "paper.json", (spec_mtime + 10, spec_mtime + 10))
+    with pytest.raises(PipelineError, match="newer than spec.json"):
+        Pipeline(
+            SETTINGS,
+            PipelineOptions(source=None, out_dir=tmp_path, repo="me/out", from_stage="implement"),
+            devin=FakeDevin([]),
+            github=FakeGitHub(),
+            log=lambda _: None,
+        ).run()
