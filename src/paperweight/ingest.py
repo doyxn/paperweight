@@ -8,6 +8,7 @@ import posixpath
 import re
 import tarfile
 import xml.etree.ElementTree as ET
+from collections.abc import Iterator, Mapping
 from pathlib import Path
 
 import httpx
@@ -124,7 +125,7 @@ def unpack_source(data: bytes) -> tuple[str, dict[str, str] | bytes]:
 
 
 _TEX_COMMAND = re.compile(r"\\[A-Za-z@]+\*?(?:\[[^\]]*\])?(?:\{[^{}]*\})*")
-MIN_PROSE_WORDS = 20
+MIN_PROSE_LETTERS = 100
 
 
 def is_empty(paper: Paper) -> bool:
@@ -132,7 +133,7 @@ def is_empty(paper: Paper) -> bool:
     if paper.equations or paper.algorithms:
         return False
     prose = _TEX_COMMAND.sub(" ", " ".join(s.text for s in paper.sections))
-    return len(re.findall(r"[A-Za-z]{2,}", prose)) < MIN_PROSE_WORDS
+    return len(re.findall(r"[^\W\d_]", prose)) < MIN_PROSE_LETTERS
 
 
 def parse_latex_files(files: dict[str, str], metadata: PaperMetadata | None = None) -> Paper:
@@ -224,6 +225,27 @@ def _read_tree(root: Path) -> dict[str, str]:
     return files
 
 
+class _IncludedFiles(Mapping[str, str]):
+    """Reads only the files a document actually includes, from within ``root``."""
+
+    def __init__(self, root: Path):
+        self.root = root.resolve()
+
+    def __getitem__(self, key: str) -> str:
+        p = self.root / key
+        if p.suffix not in TEXT_SUFFIXES or p.is_symlink() or not p.is_file():
+            raise KeyError(key)
+        if not p.resolve().is_relative_to(self.root):
+            raise KeyError(key)
+        return _decode(p.read_bytes())
+
+    def __iter__(self) -> Iterator[str]:
+        return iter(())
+
+    def __len__(self) -> int:
+        return 0
+
+
 def _load_local(path: Path) -> Paper:
     if path.is_dir():
         return parse_latex_files(_read_tree(path))
@@ -231,7 +253,7 @@ def _load_local(path: Path) -> Paper:
     if path.suffix.lower() == ".pdf" or data[:4] == b"%PDF":
         return parse_pdf(data)
     if path.suffix == ".tex":
-        return parse_latex(_decode(data), files=_read_tree(path.parent))
+        return parse_latex(_decode(data), files=_IncludedFiles(path.parent))
     kind, payload = unpack_source(data)
     if kind == "pdf":
         assert isinstance(payload, bytes)

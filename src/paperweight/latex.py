@@ -209,7 +209,7 @@ def parse_latex(
     ``base_dir`` is the main file's directory within ``files``; includes resolve against it.
     """
     tex = strip_comments(tex)
-    if files:
+    if files is not None:
         tex = resolve_inputs(tex, files, base_dir)
 
     metadata = metadata.model_copy() if metadata else PaperMetadata()

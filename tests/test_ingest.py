@@ -11,12 +11,13 @@ import respx
 from paperweight.ingest import (
     ARXIV_API,
     IngestError,
+    is_empty,
     load_paper,
     parse_arxiv_id,
     parse_latex_files,
     unpack_source,
 )
-from paperweight.models import Paper
+from paperweight.models import Paper, PaperMetadata, Section
 
 ATOM_FEED = """<?xml version="1.0" encoding="UTF-8"?>
 <feed xmlns="http://www.w3.org/2005/Atom">
@@ -170,3 +171,22 @@ def test_archive_without_main_falls_back_to_pdf(monkeypatch):
         lambda data, metadata=None: Paper(metadata=metadata, source_format="pdf"),
     )
     assert load_paper("1412.6980").source_format == "pdf"
+
+
+def test_non_latin_prose_is_not_empty():
+    text = "本文提出了一种新的指数平滑方法，" * 10
+    paper = Paper(
+        metadata=PaperMetadata(),
+        source_format="latex",
+        sections=[Section(title="方法", level=1, text=text)],
+    )
+    assert not is_empty(paper)
+
+
+def test_local_tex_file_cannot_include_outside_its_directory(tmp_path, sample_tex):
+    (tmp_path / "secret.tex").write_text("TOPSECRET")
+    src = tmp_path / "src"
+    src.mkdir()
+    main = src / "main.tex"
+    main.write_text(sample_tex.replace("\\end{document}", "\\input{../secret}\\end{document}"))
+    assert "TOPSECRET" not in load_paper(str(main)).model_dump_json()
