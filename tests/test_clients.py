@@ -7,7 +7,7 @@ import pytest
 import respx
 
 from paperweight.devin import DevinClient, DevinError, devin_id, is_settled
-from paperweight.github import GitHubClient
+from paperweight.github import GitHubClient, GitHubError
 
 DEVIN = "https://api.devin.ai/v3/organizations/org-1"
 GH = "https://api.github.com"
@@ -101,3 +101,12 @@ def test_github_put_file_updates_existing():
     GitHubClient("tok").put_file("me", "r", "docs/a.md", "hi", "msg", "main")
     body = json.loads(put.calls.last.request.content)
     assert body["sha"] == "abc" and body["branch"] == "main"
+
+
+@respx.mock
+def test_github_put_file_rejected():
+    path = f"{GH}/repos/me/r/contents/docs/a.md"
+    respx.get(path).mock(return_value=httpx.Response(404))
+    respx.put(path).mock(return_value=httpx.Response(404))
+    with pytest.raises(GitHubError, match="cannot write"):
+        GitHubClient("tok").put_file("me", "r", "docs/a.md", "hi", "msg", "main")

@@ -81,7 +81,9 @@ class GitHubClient:
         }
         if existing.status_code == 200 and isinstance(existing.json(), dict):
             payload["sha"] = existing.json()["sha"]
-        self._request("PUT", f"/repos/{owner}/{name}/contents/{path}", json=payload)
+        response = self._request("PUT", f"/repos/{owner}/{name}/contents/{path}", json=payload)
+        if response.status_code == 404:
+            raise GitHubError(f"cannot write {path} to {owner}/{name}@{branch}")
 
     def list_pulls(self, owner: str, name: str, state: str = "open") -> list[dict[str, Any]]:
         response = self._request("GET", f"/repos/{owner}/{name}/pulls", params={"state": state})
