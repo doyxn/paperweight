@@ -1,0 +1,41 @@
+\documentclass{article}
+\usepackage{amsmath,algorithm,algorithmic}
+\title{Fast Exponential Smoothing \\ for Streams}
+\begin{document}
+\maketitle
+\begin{abstract}
+We present an online smoother with $O(1)$ updates.
+\end{abstract}
+
+\section{Method}
+Let $x_t$ be the input. % a comment with \begin{equation} inside
+The smoothed value is
+\begin{equation}
+  s_t = \alpha x_t + (1 - \alpha) s_{t-1} \label{eq:update}
+\end{equation}
+with $0 < \alpha \le 1$.
+\[ \lim_{t \to \infty} s_t = \mu \]
+
+\begin{theorem}
+For bounded inputs, $\min_i x_i \le s_t \le \max_i x_i$.
+\end{theorem}
+
+\input{sections/algo}
+
+\section{Experiments}
+\subsection{Setup}
+\begin{figure}[t]
+  \centering
+  \includegraphics[width=\linewidth]{figs/arch.pdf}
+  \caption{System   architecture.}
+  \label{fig:arch}
+\end{figure}
+\begin{figure*}
+  \begin{tikzpicture}\node {a};\end{tikzpicture}
+  \caption{Data flow.}
+\end{figure*}
+\begin{align*}
+  e_t &= x_t - s_{t-1} \\
+  s_t &= s_{t-1} + \alpha e_t
+\end{align*}
+\end{document}
