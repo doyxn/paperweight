@@ -17,7 +17,7 @@ from paperweight.ingest import (
     parse_latex_files,
     unpack_source,
 )
-from paperweight.models import Paper, PaperMetadata, Section
+from paperweight.models import Figure, Paper, PaperMetadata, Section
 
 ATOM_FEED = """<?xml version="1.0" encoding="UTF-8"?>
 <feed xmlns="http://www.w3.org/2005/Atom">
@@ -190,3 +190,8 @@ def test_local_tex_file_cannot_include_outside_its_directory(tmp_path, sample_te
     main = src / "main.tex"
     main.write_text(sample_tex.replace("\\end{document}", "\\input{../secret}\\end{document}"))
     assert "TOPSECRET" not in load_paper(str(main)).model_dump_json()
+
+
+def test_figures_alone_are_not_empty():
+    paper = Paper(metadata=PaperMetadata(), source_format="latex", figures=[Figure(caption="x")])
+    assert not is_empty(paper)

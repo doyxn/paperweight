@@ -130,7 +130,7 @@ MIN_PROSE_LETTERS = 100
 
 def is_empty(paper: Paper) -> bool:
     """True when the LaTeX source holds no content, e.g. it only wraps a PDF via \\includepdf."""
-    if paper.equations or paper.algorithms:
+    if paper.equations or paper.algorithms or paper.figures or paper.theorems:
         return False
     prose = _TEX_COMMAND.sub(" ", " ".join(s.text for s in paper.sections))
     return len(re.findall(r"[^\W\d_]", prose)) < MIN_PROSE_LETTERS
