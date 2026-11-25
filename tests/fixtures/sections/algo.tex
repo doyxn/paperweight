@@ -1,0 +1,10 @@
+\begin{algorithm}
+\caption{Online smoothing}
+\label{alg:smooth}
+\begin{algorithmic}
+\STATE $s \gets x_0$
+\FOR{$t = 1$ to $T$}
+  \STATE $s \gets \alpha x_t + (1-\alpha) s$
+\ENDFOR
+\end{algorithmic}
+\end{algorithm}
