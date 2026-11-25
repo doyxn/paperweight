@@ -3,6 +3,8 @@
 An autonomous arXiv-to-production compiler: give it a paper, get back a GitHub repository
 with an engineering spec, an implementation and a verification suite, delivered as pull requests.
 
+(Note: I was given $300 in Devin credits & one month of max to start and finish this project with Devin by Cognition)
+
 ```
 arXiv URL / PDF
   └─[1] ingest & parse ─────────── paper.json  (equations, algorithms, figures, theorems)
@@ -64,3 +66,5 @@ Artifacts (`paper.json`, `spec.json`, `SPEC.md`, `*_session.json`, `report.md`) 
 uv run ruff check . && uv run ruff format --check .
 uv run pytest
 ```
+||||||| f01b2dd
+compile arxiv papers into prod specs, pseudocode and test suites.
